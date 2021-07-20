@@ -2044,6 +2044,13 @@ export interface TextDocumentClientCapabilities {
 	 * @since 3.16.0
 	 */
 	moniker?: MonikerClientCapabilities;
+
+	/**
+	 * Capabilities specific to the `textDocument/inlineValues` request.
+	 *
+	 * @since 3.17.0
+	 */
+	inlineValues?: InlineValuesClientCapabilities;
 }
 ```
 
@@ -2122,6 +2129,14 @@ interface ClientCapabilities {
 		 * @since 3.16.0
 		 */
 		codeLens?: CodeLensWorkspaceClientCapabilities;
+
+		/**
+		 * Capabilities specific to the inline values requests scoped to the
+		 * workspace.
+		 *
+		 * @since 3.17.0
+		 */
+		inlineValues?: InlineValuesWorkspaceClientCapabilities;
 
 		/**
 		 * The client has support for file requests/notifications.
@@ -2485,6 +2500,11 @@ interface ServerCapabilities {
 	 * @since 3.16.0
 	 */
 	monikerProvider?: boolean | MonikerOptions | MonikerRegistrationOptions;
+
+	/**
+	 * The server provides inline values.
+	 */
+	inlineValuesProvider?: InlineValuesOptions;
 
 	/**
 	 * The server provides workspace symbol support.
@@ -8895,6 +8915,197 @@ export interface Moniker {
 
 Server implementations of this method should ensure that the moniker calculation matches to those used in the corresponding LSIF implementation to ensure symbols can be associated correctly across IDE sessions and LSIF indexes.
 
+#### <a href="#textDocument_inlineValues" name="textDocument_inlineValues" class="anchor">Inline Values Request (:leftwards_arrow_with_hook:)</a>
+
+> *Since version 3.17.0*
+
+The inline values request is sent from the client to the server to compute inline values for a given text document that may be rendered in the editor at the end of lines.
+
+_Client Capability_:
+* property name (optional): `textDocument.inlineValues`
+* property type: `InlineValuesClientCapabilities` defined as follows:
+
+<div class="anchorHolder"><a href="#inlineValuesClientCapabilities" name="inlineValuesClientCapabilities" class="linkableAnchor"></a></div>
+
+```typescript
+export interface InlineValuesClientCapabilities {
+	/**
+	 * Whether inline values supports dynamic registration.
+	 */
+	dynamicRegistration?: boolean;
+}
+```
+
+_Server Capability_:
+* property name (optional): `inlineValuesProvider`
+* property type: `InlineValuesOptions` defined as follows:
+
+<div class="anchorHolder"><a href="#inlineValuesOptions" name="inlineValuesOptions" class="linkableAnchor"></a></div>
+
+```typescript
+export interface InlineValuesOptions extends WorkDoneProgressOptions {
+}
+```
+
+_Registration Options_: `InlineValuesRegistrationOptions` defined as follows:
+
+<div class="anchorHolder"><a href="#inlineValuesRegistrationOptions" name="inlineValuesRegistrationOptions" class="linkableAnchor"></a></div>
+
+```typescript
+export interface InlineValuesRegistrationOptions extends
+	TextDocumentRegistrationOptions, InlineValuesOptions {
+}
+```
+
+_Request_:
+* method: `textDocument/inlineValues`
+* params: `InlineValuesParams` defined as follows:
+
+<div class="anchorHolder"><a href="#inlineValuesParams" name="inlineValuesParams" class="linkableAnchor"></a></div>
+
+```typescript
+interface InlineValuesParams extends WorkDoneProgressParams {
+	/**
+	 * The document to request inline values for.
+	 */
+	readonly textDocument: TextDocumentIdentifier;
+
+	/**
+	 * The visible document range for which inline values should be computed.
+	 */
+	readonly viewPort: Range;
+
+	/**
+	 * Additional information about the context in which inline values were
+	 * requested.
+	 */
+	readonly context: InlineValuesContext;
+}
+```
+
+<div class="anchorHolder"><a href="#inlineValuesContext" name="inlineValuesContext" class="linkableAnchor"></a></div>
+
+```typescript
+interface InlineValuesContext {
+	/**
+	 * The document range where execution has stopped.
+	 * Typically the end position of the range denotes the line where the inline values are shown.
+	 */
+	readonly stoppedLocation: Range;
+}
+```
+
+_Response_:
+* result: `InlineValue[]` \| `null` defined as follows:
+
+<div class="anchorHolder"><a href="#inlineValue" name="inlineValue" class="linkableAnchor"></a></div>
+
+```typescript
+/**
+ * Inline value information can be provided by different means:
+ * - directly as a text value (class InlineValueText).
+ * - as a name to use for a variable lookup (class InlineValueVariableLookup)
+ * - as an evaluatable expression (class InlineValueEvaluatableExpression)
+ * The InlineValue types combines all inline value types into one type.
+ */
+export type InlineValue = InlineValueText | InlineValueVariableLookup | InlineValueEvaluatableExpression;
+
+/**
+ * Provide inline value as text.
+ */
+export class InlineValueText {
+	/**
+	 * The document range for which the inline value applies.
+	 */
+	readonly range: Range;
+
+	/**
+	 * The text of the inline value.
+	 */
+	readonly text: string;
+}
+
+/**
+ * Provide inline value through a variable lookup.
+ * If only a range is specified, the variable name will be extracted from the underlying document.
+ * An optional variable name can be used to override the extracted name.
+ */
+export class InlineValueVariableLookup {
+	/**
+	 * The document range for which the inline value applies.
+	 * The range is used to extract the variable name from the underlying document.
+	 */
+	readonly range: Range;
+
+	/**
+	 * If specified the name of the variable to look up.
+	 */
+	readonly variableName?: string;
+
+	/**
+	 * How to perform the lookup.
+	 */
+	readonly caseSensitiveLookup: boolean;
+}
+
+/**
+ * Provide an inline value through an expression evaluation.
+ * If only a range is specified, the expression will be extracted from the underlying document.
+ * An optional expression can be used to override the extracted expression.
+ */
+export class InlineValueEvaluatableExpression {
+	/**
+	 * The document range for which the inline value applies.
+	 * The range is used to extract the evaluatable expression from the underlying document.
+	 */
+	readonly range: Range;
+
+	/**
+	 * If specified the expression overrides the extracted expression.
+	 */
+	readonly expression?: string;
+}
+```
+* error: code and message set in case an exception happens during the inline values request.
+
+#### <a href="#inlineValues_refresh" name="inlineValues_refresh" class="anchor">Inline Values Refresh Request (:arrow_right_hook:)</a>
+
+> *Since version 3.17.0*
+
+The `workspace/inlineValues/refresh` request is sent from the server to the client. Servers can use it to ask clients to refresh the inline values currently shown in editors. As a result the client should ask the server to recompute the inline values for these editors. This is useful if a server detects a change which requires a re-calculation of all inline values. Note that the client still has the freedom to delay the re-calculation of the inline values if for example an editor is currently not visible.
+
+_Client Capability_:
+
+* property name (optional): `workspace.inlineValues`
+* property type: `InlineValuesWorkspaceClientCapabilities` defined as follows:
+
+<div class="anchorHolder"><a href="#inlineValuesWorkspaceClientCapabilities" name="inlineValuesWorkspaceClientCapabilities" class="linkableAnchor"></a></div>
+
+```typescript
+export interface InlineValuesWorkspaceClientCapabilities {
+	/**
+	 * Whether the client implementation supports a refresh request sent from the
+	 * server to the client.
+	 *
+	 * Note that this event is global and will force the client to refresh all
+	 * inline values currently shown. It should be used with absolute care and is
+	 * useful for situation where a server for example detect a project wide
+	 * change that requires such a calculation.
+	 */
+	refreshSupport?: boolean;
+}
+```
+
+_Request_:
+
+* method: `workspace/inlineValues/refresh`
+* params: none
+
+_Response_:
+
+* result: void
+* error: code and message set in case an exception happens during the 'workspace/inlineValues/refresh' request
+
 ### <a href="#implementationConsiderations" name="implementationConsiderations" class="anchor">Implementation Considerations</a>
 
 Language servers usually run in a separate process and client communicate with them in an asynchronous fashion. Additionally clients usually allow users to interact with the source code even if request results are pending. We recommend the following implementation pattern to avoid that clients apply outdated response results:
@@ -8918,6 +9129,7 @@ Servers usually support different communication channels (e.g. stdio, pipes, ...
 #### <a href="#version_3_17_0" name="version_3_17_0" class="anchor">3.17.0 (xx/xx/xxxx)</a>
 
 * Add support for a completion item label details.
+* Add support for `textDocument/inlineValues` request.
 
 #### <a href="#version_3_16_0" name="version_3_16_0" class="anchor">3.16.0 (12/14/2020)</a>
 
